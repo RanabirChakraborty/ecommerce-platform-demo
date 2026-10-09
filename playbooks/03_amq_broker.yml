@@ -1,0 +1,47 @@
+---
+- name: "Phase 2A — Deploy Red Hat AMQ Broker High-Availability Cluster (redhat.amq_broker)"
+  hosts: amq_broker
+  become: true
+  collections:
+    - redhat.amq_broker
+  vars:
+    amq_broker_admin_password: "{{ amq_broker_admin_pass }}"
+    amq_broker_cluster_password: "{{ amq_broker_cluster_pass }}"
+    amq_broker_instance_name: "amq_broker"
+    amq_broker_ha_type: "shared-nothing" # Replication pair
+    amq_broker_ha_role: "{{ broker_role }}"
+    amq_broker_ha_peer: "{{ (groups['amq_broker_slave'][0] if broker_role == 'master' else groups['amq_broker_master'][0]) }}"
+    amq_broker_ports:
+      - 61616 # CORE / OpenWire / JMS
+      - 8161  # Web Management Console
+      - 5672  # AMQP
+      - 9876  # HA Replication port
+  tasks:
+    - name: Open firewall ports for AMQ Broker messaging and replication
+      ansible.posix.firewalld:
+        port: "{{ item }}/tcp"
+        permanent: true
+        state: enabled
+        immediate: true
+      loop: "{{ amq_broker_ports }}"
+      when: enable_firewalld | bool
+
+    - name: Deploy and configure Red Hat AMQ Broker
+      ansible.builtin.include_role:
+        name: amq_broker
+      vars:
+        amq_broker_queues:
+          - name: "{{ amq_broker_queue_name }}"
+            routing_type: "ANYCAST"
+        amq_broker_topics:
+          - name: "orders.events"
+            routing_type: "MULTICAST"
+
+    - name: Retrieve AMQ Broker facts via collection custom plugin
+      redhat.amq_broker.amq_broker_facts:
+      register: amq_facts_result
+      ignore_errors: true
+
+    - name: Display AMQ Broker cluster status
+      ansible.builtin.debug:
+        msg: "Red Hat AMQ Broker instance {{ inventory_hostname }} deployed in role {{ broker_role }} with queue {{ amq_broker_queue_name }}"

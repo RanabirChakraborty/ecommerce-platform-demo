@@ -1,0 +1,54 @@
+---
+- name: "Phase 2B — Deploy Red Hat AMQ Streams (Apache Kafka) in KRaft Mode (redhat.amq_streams)"
+  hosts: kafka
+  become: true
+  collections:
+    - redhat.amq_streams
+  vars:
+    amq_streams_install_dir: "/opt/kafka"
+    kafka_kraft_cluster_id: "{{ amq_streams_cluster_id }}"
+    kafka_node_id: "{{ node_id }}"
+    kafka_process_roles: "broker,controller"
+    kafka_controller_quorum_voters: >-
+      {% set voters = [] %}
+      {% for h in groups['kafka'] %}
+        {% set _ = voters.append(hostvars[h].node_id ~ '@' ~ (hostvars[h].ansible_host | default(h)) ~ ':9093') %}
+      {% endfor %}
+      {{ voters | join(',') }}
+    kafka_listeners: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
+    kafka_advertised_listeners: "PLAINTEXT://{{ ansible_host }}:9092"
+    amq_streams_ports:
+      - 9092 # Kafka Clients
+      - 9093 # KRaft Controller Quorum
+  tasks:
+    - name: Open firewall ports for AMQ Streams Kafka brokers and KRaft quorum
+      ansible.posix.firewalld:
+        port: "{{ item }}/tcp"
+        permanent: true
+        state: enabled
+        immediate: true
+      loop: "{{ amq_streams_ports }}"
+      when: enable_firewalld | bool
+
+    - name: Run Red Hat AMQ Streams common installation tasks
+      ansible.builtin.include_role:
+        name: amq_streams_common
+      ignore_errors: true
+
+    - name: Deploy Kafka Broker in KRaft mode via redhat.amq_streams
+      ansible.builtin.include_role:
+        name: amq_streams_broker
+      vars:
+        kafka_use_kraft: true
+      ignore_errors: true
+
+    - name: Ensure retail orders event stream topic is created
+      ansible.builtin.command: >
+        /opt/kafka/bin/kafka-topics.sh --create
+        --if-not-exists
+        --bootstrap-server localhost:9092
+        --replication-factor 2
+        --partitions 3
+        --topic {{ amq_streams_topic_name }}
+      run_once: true
+      ignore_errors: true

@@ -1,0 +1,66 @@
+---
+- name: "Phase 4 — Deploy Red Hat JBoss Core Services mod_cluster Load Balancers (redhat.jbcs)"
+  hosts: loadbalancer
+  become: true
+  collections:
+    - redhat.jbcs
+  vars:
+    jbcs_ports:
+      - 80   # HTTP
+      - 443  # HTTPS
+      - 6666 # mod_cluster management port
+  tasks:
+    - name: Open firewall ports for JBCS frontend and mod_cluster advertisement
+      ansible.posix.firewalld:
+        port: "{{ item }}/tcp"
+        permanent: true
+        state: enabled
+        immediate: true
+      loop: "{{ jbcs_ports }}"
+      when: enable_firewalld | bool
+
+    - name: Deploy Red Hat JBoss Core Services (Apache HTTPD)
+      ansible.builtin.include_role:
+        name: jbcs
+
+    - name: Configure mod_cluster proxy configuration for dynamic EAP cluster registration
+      ansible.builtin.copy:
+        dest: /opt/jbcs-httpd/httpd/conf.d/mod_cluster.conf
+        content: |
+          LoadModule proxy_cluster_module modules/mod_proxy_cluster.so
+          LoadModule cluster_slotmem_module modules/mod_cluster_slotmem.so
+          LoadModule manager_module modules/mod_manager.so
+          LoadModule advertise_module modules/mod_advertise.so
+
+          MemManagerFile /opt/jbcs-httpd/httpd/cache/mod_cluster
+
+          Listen {{ jbcs_mod_cluster_port }}
+          <VirtualHost *:{{ jbcs_mod_cluster_port }}>
+            <Directory />
+              Require all granted
+            </Directory>
+            KeepAliveTimeout 60
+            MaxKeepAliveRequests 0
+            EnableMCPMReceive
+            <Location /mod_cluster_manager>
+              SetHandler mod_cluster-manager
+              Require all granted
+            </Location>
+          </VirtualHost>
+        mode: '0644'
+      notify: Restart jbcs
+      ignore_errors: true
+
+    - name: Ensure JBCS service is active and running
+      ansible.builtin.systemd:
+        name: jbcs-httpd
+        state: started
+        enabled: true
+      ignore_errors: true
+
+  handlers:
+    - name: Restart jbcs
+      ansible.builtin.systemd:
+        name: jbcs-httpd
+        state: restarted
+      ignore_errors: true

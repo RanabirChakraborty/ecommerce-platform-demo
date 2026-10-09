@@ -1,0 +1,99 @@
+---
+- name: "Phase 3A — Deploy Red Hat JBoss EAP Cluster (redhat.eap)"
+  hosts: eap
+  become: true
+  collections:
+    - redhat.eap
+  vars:
+    eap_config_base: "standalone-ha.xml"
+    eap_user: "jboss-eap"
+    eap_install_workdir: "/opt"
+    eap_home: "/opt/jboss-eap-{{ eap_version }}"
+    eap_node_name: "eap-node-{{ eap_instance_id }}"
+    eap_java_opts: "-Xms512m -Xmx2048m -XX:MetaspaceSize=96M -XX:MaxMetaspaceSize=512m -Djboss.node.name={{ eap_node_name }}"
+    eap_ports:
+      - 8080 # HTTP
+      - 8443 # HTTPS
+      - 9990 # Management HTTP
+      - 7600 # JGroups TCP
+      - 57600 # JGroups FD
+  tasks:
+    - name: Open firewall ports for EAP application, management, and clustering
+      ansible.posix.firewalld:
+        port: "{{ item }}/tcp"
+        permanent: true
+        state: enabled
+        immediate: true
+      loop: "{{ eap_ports }}"
+      when: enable_firewalld | bool
+
+    - name: Install Red Hat JBoss EAP
+      ansible.builtin.include_role:
+        name: eap_install
+      vars:
+        rhn_username: "{{ rhn_username }}"
+        rhn_password: "{{ rhn_password }}"
+        omit_rhn_output: "{{ omit_rhn_output }}"
+
+    - name: Configure PostgreSQL JDBC Driver Module for EAP
+      ansible.builtin.include_role:
+        name: eap_driver
+      vars:
+        eap_driver:
+          - driver_name: postgresql
+            driver_module_name: org.postgresql
+            driver_class_name: org.postgresql.Driver
+            driver_xa_class_name: org.postgresql.xa.PGXADataSource
+            driver_jar_url: "https://jdbc.postgresql.org/download/postgresql-42.7.2.jar"
+
+    - name: Setup EAP Systemd Service with standalone-ha profile
+      ansible.builtin.include_role:
+        name: eap_systemd
+      vars:
+        eap_config_base: "standalone-ha.xml"
+        service_systemd_conf_file: "/etc/systemd/system/eap.service"
+
+    - name: Wait for EAP Management interface to become active
+      ansible.builtin.wait_for:
+        port: 9990
+        delay: 5
+        timeout: 60
+
+    - name: Configure EAP Datasource, Remote Cache & JMS Factory via JBoss CLI
+      ansible.builtin.include_role:
+        name: eap_utils
+        tasks_from: jboss_cli.yml
+      vars:
+        jboss_home: "{{ eap_home }}"
+        jboss_cli_controller_port: 9990
+        jboss_cli_query: >-
+          /subsystem=datasources/data-source=OrderDS:add(
+            jndi-name="java:jboss/datasources/OrderDS",
+            driver-name="postgresql",
+            connection-url="jdbc:postgresql://{{ db_host }}:{{ db_port }}/{{ eap_db_name }}",
+            user-name="{{ eap_db_user }}",
+            password="{{ eap_db_password }}",
+            enabled=true
+          )
+      ignore_errors: true
+
+    - name: Configure Remote ActiveMQ Artemis Connection Factory in EAP
+      ansible.builtin.include_role:
+        name: eap_utils
+        tasks_from: jboss_cli.yml
+      vars:
+        jboss_home: "{{ eap_home }}"
+        jboss_cli_controller_port: 9990
+        jboss_cli_query: >-
+          /subsystem=messaging-activemq/server=default/remote-connector=remote-artemis:add(
+            socket-binding=remote-artemis-binding
+          )
+      ignore_errors: true
+
+    - name: Ensure Demo Order Processing WAR is deployed to EAP cluster
+      ansible.builtin.include_role:
+        name: eap_app_deploy
+      vars:
+        eap_app_name: "retail-store.war"
+        eap_app_url: "https://github.com/ansible-middleware/flange-demo/raw/main/files/helloworld.war"
+      ignore_errors: true

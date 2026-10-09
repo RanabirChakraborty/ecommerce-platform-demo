@@ -1,0 +1,74 @@
+---
+# ==============================================================================
+# Global & Shared Variables — Red Hat Certified Middleware Product Fleet
+# ==============================================================================
+
+domain_name: "demo.local"
+
+# Red Hat Network / Customer Portal Credentials (for online product downloads)
+rhn_username: "{{ lookup('env', 'RHN_USERNAME') | default('your_rhn_username') }}"
+rhn_password: "{{ lookup('env', 'RHN_PASSWORD') | default('your_rhn_password') }}"
+omit_rhn_output: false
+
+# Firewalld standard management
+enable_firewalld: true
+
+# Java runtime default package for RHEL 9
+java_packages:
+  - java-17-openjdk
+  - java-17-openjdk-devel
+
+# PostgreSQL Backend Database (Backing RHBK & EAP)
+db_host: "{{ groups['database'][0] | default('127.0.0.1') }}"
+db_port: 5432
+db_admin_user: "postgres"
+db_admin_password: "AdminPassword123!"
+
+rhbk_db_name: "keycloak"
+rhbk_db_user: "keycloak"
+rhbk_db_password: "KeycloakDbPassword123!"
+
+eap_db_name: "orderdb"
+eap_db_user: "orderuser"
+eap_db_password: "OrderDbPassword123!"
+
+# Red Hat Build of Keycloak (RHBK) Settings
+rhbk_admin_user: "admin"
+rhbk_admin_pass: "AdminPassword123!"
+rhbk_frontend_url: "https://auth.{{ domain_name }}"
+rhbk_realm_name: "retail-store"
+rhbk_client_id: "order-portal"
+rhbk_client_secret: "retail-portal-secret-key-12345"
+
+# Red Hat Data Grid (Infinispan) Cluster Settings
+data_grid_user: "admin"
+data_grid_pass: "DataGridAdmin123!"
+data_grid_cache_name: "web-sessions"
+
+# Red Hat AMQ Broker Artemis Credentials & Queues
+amq_broker_admin_user: "artemis"
+amq_broker_admin_pass: "ArtemisPassword123!"
+amq_broker_queue_name: "orders.inbound"
+amq_broker_cluster_user: "clusteruser"
+amq_broker_cluster_pass: "ClusterPassword123!"
+
+# Red Hat AMQ Streams (Kafka KRaft) Settings
+amq_streams_cluster_id: "4L622nShTUiBenVywCXjhA"
+amq_streams_topic_name: "retail.orders.stream"
+
+# Red Hat JBoss EAP Version & Clustering Settings
+eap_version: "8.0"
+eap_patch_version: "8.0.1"
+eap_http_port: 8080
+eap_https_port: 8443
+eap_management_port: 9990
+eap_admin_user: "admin"
+eap_admin_password: "EapAdminPassword123!"
+
+# Red Hat JBoss Web Server (JWS) Settings
+jws_version: "6.1.0"
+
+# Red Hat JBoss Core Services (JBCS) Load Balancer Settings
+jbcs_http_port: 80
+jbcs_https_port: 443
+jbcs_mod_cluster_port: 6666

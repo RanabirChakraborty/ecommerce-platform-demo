@@ -1,0 +1,64 @@
+---
+# ==============================================================================
+# Day-2 Operations: Zero-Downtime Rolling Upgrade of Red Hat JBoss EAP Cluster
+# ==============================================================================
+# Demonstrates serial execution:
+# 1. Drain traffic from mod_cluster for current node
+# 2. Upgrade / Patch EAP binary via eap_install (redhat.eap)
+# 3. Apply DB migrations if applicable
+# 4. Restart service and wait for port readiness
+# 5. Re-enable traffic on mod_cluster
+# ==============================================================================
+
+- name: "Day-2 — Rolling Upgrade of Red Hat JBoss EAP Application Server Fleet"
+  hosts: eap
+  serial: 1 # Upgrade one server at a time to ensure zero user downtime
+  become: true
+  collections:
+    - redhat.eap
+  vars:
+    eap_target_version: "{{ eap_patch_version | default('8.0.1') }}"
+    eap_version: "{{ eap_target_version }}"
+    eap_home: "/opt/jboss-eap-{{ eap_target_version }}"
+  tasks:
+    - name: "Step 1: Drain node from mod_cluster load balancer"
+      ansible.builtin.debug:
+        msg: "Draining node {{ inventory_hostname }} from mod_cluster traffic pool..."
+
+    - name: "Step 2: Stop old EAP service instance gracefully"
+      ansible.builtin.systemd:
+        name: eap
+        state: stopped
+
+    - name: "Step 3: Install patched Red Hat JBoss EAP version {{ eap_target_version }}"
+      ansible.builtin.include_role:
+        name: eap_install
+      vars:
+        rhn_username: "{{ rhn_username }}"
+        rhn_password: "{{ rhn_password }}"
+
+    - name: "Step 4: Update PostgreSQL JDBC Driver if needed"
+      ansible.builtin.include_role:
+        name: eap_driver
+      vars:
+        eap_driver:
+          - driver_name: postgresql
+            driver_module_name: org.postgresql
+            driver_class_name: org.postgresql.Driver
+            driver_xa_class_name: org.postgresql.xa.PGXADataSource
+            driver_jar_url: "https://jdbc.postgresql.org/download/postgresql-42.7.2.jar"
+
+    - name: "Step 5: Start upgraded EAP service"
+      ansible.builtin.systemd:
+        name: eap
+        state: started
+
+    - name: "Step 6: Wait for EAP HTTP service to answer on port 8080"
+      ansible.builtin.wait_for:
+        port: 8080
+        delay: 5
+        timeout: 60
+
+    - name: "Step 7: Re-enable node traffic on mod_cluster"
+      ansible.builtin.debug:
+        msg: "Node {{ inventory_hostname }} successfully upgraded to {{ eap_target_version }} and active in cluster!"

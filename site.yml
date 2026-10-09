@@ -1,0 +1,49 @@
+---
+# ==============================================================================
+# Ansible for Middleware (AMW) — Interconnected Fleet Demo
+# Master Orchestration Playbook (Red Hat Certified Downstream Collections)
+# ==============================================================================
+# Deploys 6 Red Hat products across 10+ servers in a single automated pipeline:
+# 1. 00_prerequisites.yml -> Base OS & Shared PostgreSQL Database
+# 2. 01_data_grid.yml     -> Red Hat Data Grid (redhat.data_grid)
+# 3. 02_rhbk.yml          -> Red Hat Build of Keycloak HA & Realm config (redhat.rhbk)
+# 4. 03_amq_broker.yml    -> Red Hat AMQ Broker Artemis HA (redhat.amq_broker)
+# 5. 04_amq_streams.yml   -> Red Hat AMQ Streams Kafka KRaft (redhat.amq_streams)
+# 6. 05_eap.yml           -> Red Hat JBoss EAP Cluster (redhat.eap)
+# 7. 06_jws.yml           -> Red Hat JBoss Web Server (redhat.jws)
+# 8. 07_jbcs.yml          -> Red Hat JBoss Core Services mod_cluster (redhat.jbcs)
+# 9. 08_validate.yml      -> End-to-End System Health Validation
+# ==============================================================================
+
+# Phase 0: Base Dependencies, Java Runtimes & PostgreSQL DB
+- name: "Phase 0 — Baseline Prerequisites & Database"
+  ansible.builtin.import_playbook: playbooks/00_prerequisites.yml
+
+# Phase 1: Identity & Distributed Caching Foundation
+- name: "Phase 1A — Red Hat Data Grid (redhat.data_grid)"
+  ansible.builtin.import_playbook: playbooks/01_data_grid.yml
+
+- name: "Phase 1B — Red Hat Build of Keycloak (redhat.rhbk)"
+  ansible.builtin.import_playbook: playbooks/02_rhbk.yml
+
+# Phase 2: Enterprise Messaging & Event Streaming
+- name: "Phase 2A — Red Hat AMQ Broker (redhat.amq_broker)"
+  ansible.builtin.import_playbook: playbooks/03_amq_broker.yml
+
+- name: "Phase 2B — Red Hat AMQ Streams (redhat.amq_streams)"
+  ansible.builtin.import_playbook: playbooks/04_amq_streams.yml
+
+# Phase 3: Application Server Fleet
+- name: "Phase 3A — Red Hat JBoss EAP (redhat.eap)"
+  ansible.builtin.import_playbook: playbooks/05_eap.yml
+
+- name: "Phase 3B — Red Hat JBoss Web Server (redhat.jws)"
+  ansible.builtin.import_playbook: playbooks/06_jws.yml
+
+# Phase 4: Frontend Load Balancing with mod_cluster
+- name: "Phase 4 — Red Hat JBoss Core Services (redhat.jbcs)"
+  ansible.builtin.import_playbook: playbooks/07_jbcs.yml
+
+# Phase 5: Verification & End-to-End Health Checks
+- name: "Phase 5 — End-to-End Validation"
+  ansible.builtin.import_playbook: playbooks/08_validate.yml

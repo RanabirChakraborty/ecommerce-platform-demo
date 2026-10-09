@@ -1,0 +1,124 @@
+---
+- name: "Phase 1B — Deploy Red Hat Build of Keycloak (RHBK) in High Availability (redhat.rhbk)"
+  hosts: keycloak
+  become: true
+  collections:
+    - redhat.rhbk
+  vars:
+    rhbk_admin_password: "{{ rhbk_admin_pass }}"
+    rhbk_db_engine: postgres
+    rhbk_db_host: "{{ db_host }}"
+    rhbk_db_port: "{{ db_port }}"
+    rhbk_cache_type: ispn
+    rhbk_cache_config_file: cache-ispn.xml
+    rhbk_http_enabled: true
+    rhbk_http_port: 8080
+    rhbk_https_port: 8443
+    rhbk_proxy_mode: edge
+    rhbk_hostname: "{{ rhbk_frontend_url }}"
+    rhbk_ports:
+      - 8080 # HTTP
+      - 8443 # HTTPS
+      - 7800 # JGroups
+  tasks:
+    - name: Open firewall ports for RHBK HTTP, HTTPS and Clustering
+      ansible.posix.firewalld:
+        port: "{{ item }}/tcp"
+        permanent: true
+        state: enabled
+        immediate: true
+      loop: "{{ rhbk_ports }}"
+      when: enable_firewalld | bool
+
+    - name: Deploy Red Hat Build of Keycloak (RHBK Quarkus runtime)
+      ansible.builtin.include_role:
+        name: rhbk
+
+- name: "Phase 1C — Configure Realm, OIDC Client and Users via RHBK REST API (redhat.rhbk.rhbk_realm)"
+  hosts: keycloak[0]
+  become: false
+  collections:
+    - redhat.rhbk
+  vars:
+    auth_keycloak_url: "http://{{ ansible_host }}:8080"
+    auth_username: "{{ rhbk_admin_user }}"
+    auth_password: "{{ rhbk_admin_pass }}"
+    auth_realm: "master"
+  tasks:
+    - name: Ensure Demo Realm exists in RHBK
+      redhat.rhbk.keycloak_realm:
+        auth_keycloak_url: "{{ auth_keycloak_url }}"
+        auth_username: "{{ auth_username }}"
+        auth_password: "{{ auth_password }}"
+        auth_realm: "{{ auth_realm }}"
+        realm: "{{ rhbk_realm_name }}"
+        enabled: true
+        display_name: "Retail Store Authentication Realm"
+        state: present
+      ignore_errors: true
+
+    - name: Ensure EAP OIDC Client is configured in RHBK Realm
+      redhat.rhbk.keycloak_client:
+        auth_keycloak_url: "{{ auth_keycloak_url }}"
+        auth_username: "{{ auth_username }}"
+        auth_password: "{{ auth_password }}"
+        auth_realm: "{{ auth_realm }}"
+        realm: "{{ rhbk_realm_name }}"
+        client_id: "{{ rhbk_client_id }}"
+        name: "Retail EAP Web Portal"
+        description: "OIDC Client for JBoss EAP Order Application"
+        enabled: true
+        client_authenticator_type: "client-secret"
+        secret: "{{ rhbk_client_secret }}"
+        public_client: false
+        standard_flow_enabled: true
+        implicit_flow_enabled: false
+        direct_access_grants_enabled: true
+        service_accounts_enabled: true
+        redirect_uris:
+          - "http://*.{{ domain_name }}/*"
+          - "https://*.{{ domain_name }}/*"
+          - "http://localhost:8080/*"
+        web_origins:
+          - "+"
+        state: present
+      ignore_errors: true
+
+    - name: Create Demo Application Roles in RHBK
+      redhat.rhbk.keycloak_role:
+        auth_keycloak_url: "{{ auth_keycloak_url }}"
+        auth_username: "{{ auth_username }}"
+        auth_password: "{{ auth_password }}"
+        auth_realm: "{{ auth_realm }}"
+        realm: "{{ rhbk_realm_name }}"
+        name: "{{ item }}"
+        description: "Application Role {{ item }}"
+        state: present
+      loop:
+        - "customer"
+        - "order_manager"
+        - "admin"
+      ignore_errors: true
+
+    - name: Create Demo User Account in RHBK
+      redhat.rhbk.keycloak_user:
+        auth_keycloak_url: "{{ auth_keycloak_url }}"
+        auth_username: "{{ auth_username }}"
+        auth_password: "{{ auth_password }}"
+        auth_realm: "{{ auth_realm }}"
+        realm: "{{ rhbk_realm_name }}"
+        username: "demouser"
+        email: "demouser@example.com"
+        first_name: "Demo"
+        last_name: "Customer"
+        enabled: true
+        email_verified: true
+        credentials:
+          - type: password
+            value: "DemoPassword123!"
+            temporary: false
+        realm_roles:
+          - "customer"
+          - "order_manager"
+        state: present
+      ignore_errors: true

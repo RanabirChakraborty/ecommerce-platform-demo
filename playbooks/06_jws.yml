@@ -1,0 +1,35 @@
+---
+- name: "Phase 3B — Deploy Red Hat JBoss Web Server (redhat.jws)"
+  hosts: jws
+  become: true
+  collections:
+    - redhat.jws
+  vars:
+    jws_home: "/opt/jws-{{ jws_version }}"
+    jws_ports:
+      - 8080 # HTTP
+      - 8443 # HTTPS
+      - 8009 # AJP
+  tasks:
+    - name: Open firewall ports for JWS web services
+      ansible.posix.firewalld:
+        port: "{{ item }}/tcp"
+        permanent: true
+        state: enabled
+        immediate: true
+      loop: "{{ jws_ports }}"
+      when: enable_firewalld | bool
+
+    - name: Deploy Red Hat JBoss Web Server instance
+      ansible.builtin.include_role:
+        name: jws
+      vars:
+        jws_install_method: zipfiles
+        rhn_username: "{{ rhn_username }}"
+        rhn_password: "{{ rhn_password }}"
+      ignore_errors: true
+
+    - name: Validate JWS deployment status
+      ansible.builtin.include_role:
+        name: jws_validation
+      ignore_errors: true

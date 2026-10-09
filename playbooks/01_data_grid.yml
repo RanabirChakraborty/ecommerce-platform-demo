@@ -1,0 +1,45 @@
+---
+- name: "Phase 1A — Deploy and Configure Red Hat Data Grid Cluster (redhat.data_grid)"
+  hosts: datagrid
+  become: true
+  collections:
+    - redhat.data_grid
+  vars:
+    data_grid_users:
+      - username: "{{ data_grid_user }}"
+        password: "{{ data_grid_pass }}"
+        roles:
+          - admin
+          - observer
+          - deployer
+          - application
+    data_grid_supervisor_password: "{{ data_grid_pass }}"
+    data_grid_cluster_name: "datagrid-cluster"
+    data_grid_bind_address: "{{ ansible_default_ipv4.address | default(ansible_host) }}"
+    data_grid_ports:
+      - 11222 # Hot Rod / REST Port
+      - 7800  # JGroups Cluster Discovery
+  tasks:
+    - name: Open firewall ports for Data Grid HotRod and JGroups clustering
+      ansible.posix.firewalld:
+        port: "{{ item }}/tcp"
+        permanent: true
+        state: enabled
+        immediate: true
+      loop: "{{ data_grid_ports }}"
+      when: enable_firewalld | bool
+
+    - name: Deploy Red Hat Data Grid cluster nodes
+      ansible.builtin.include_role:
+        name: data_grid
+
+    - name: Ensure HTTP session distributed cache is created for EAP & RHBK
+      ansible.builtin.include_role:
+        name: data_grid_cache
+      vars:
+        cache_name: "{{ data_grid_cache_name }}"
+        cache_mode: "DIST_SYNC"
+        cache_owners: 2
+        cache_template: "org.infinispan.DIST_SYNC"
+      run_once: true
+      ignore_errors: true

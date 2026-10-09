@@ -1,0 +1,101 @@
+---
+- name: "Phase 0A — Base OS Prerequisites, Java Runtimes & Firewalld"
+  hosts: middleware:infrastructure
+  become: true
+  tasks:
+    - name: Ensure required base packages and python dependencies are installed
+      ansible.builtin.dnf:
+        name: "{{ java_packages + ['python3-pip', 'python3-netaddr', 'python3-lxml',
+                                   'python3-jmespath', 'curl', 'tar', 'unzip', 'firewalld'] }}"
+        state: present
+        update_cache: false
+
+    - name: Ensure firewalld is running and enabled
+      ansible.builtin.systemd:
+        name: firewalld
+        state: started
+        enabled: true
+      when: enable_firewalld | bool
+
+- name: "Phase 0B — Setup Shared PostgreSQL Database for RHBK and EAP"
+  hosts: database
+  become: true
+  tasks:
+    - name: Install PostgreSQL server packages
+      ansible.builtin.dnf:
+        name:
+          - postgresql-server
+          - postgresql-contrib
+          - python3-psycopg2
+        state: present
+
+    - name: Check if PostgreSQL database is initialized
+      ansible.builtin.stat:
+        path: /var/lib/pgsql/data/PG_VERSION
+      register: pgsql_init_check
+
+    - name: Initialize PostgreSQL database
+      ansible.builtin.command: postgresql-setup --initdb
+      when: not pgsql_init_check.stat.exists
+
+    - name: Configure PostgreSQL pg_hba.conf for password authentication
+      ansible.builtin.lineinfile:
+        path: /var/lib/pgsql/data/pg_hba.conf
+        line: "host all all 0.0.0.0/0 md5"
+        insertafter: "^# IPv4 local connections:"
+      notify: Restart postgresql
+
+    - name: Configure PostgreSQL to listen on all interfaces
+      ansible.builtin.lineinfile:
+        path: /var/lib/pgsql/data/postgresql.conf
+        regexp: "^#?listen_addresses =.*"
+        line: "listen_addresses = '*'"
+      notify: Restart postgresql
+
+    - name: Start and enable PostgreSQL service
+      ansible.builtin.systemd:
+        name: postgresql
+        state: started
+        enabled: true
+
+    - name: Open PostgreSQL firewalld port
+      ansible.posix.firewalld:
+        port: 5432/tcp
+        permanent: true
+        state: enabled
+        immediate: true
+      when: enable_firewalld | bool
+
+    - name: Create database user for Red Hat Build of Keycloak (RHBK)
+      community.postgresql.postgresql_user:
+        name: "{{ rhbk_db_user }}"
+        password: "{{ rhbk_db_password }}"
+        state: present
+      become_user: postgres
+
+    - name: Create database for RHBK
+      community.postgresql.postgresql_db:
+        name: "{{ rhbk_db_name }}"
+        owner: "{{ rhbk_db_user }}"
+        state: present
+      become_user: postgres
+
+    - name: Create database user for Red Hat JBoss EAP
+      community.postgresql.postgresql_user:
+        name: "{{ eap_db_user }}"
+        password: "{{ eap_db_password }}"
+        state: present
+      become_user: postgres
+
+    - name: Create database for Red Hat JBoss EAP
+      community.postgresql.postgresql_db:
+        name: "{{ eap_db_name }}"
+        owner: "{{ eap_db_user }}"
+        state: present
+      become_user: postgres
+
+  handlers:
+    - name: Restart postgresql
+      ansible.builtin.systemd:
+        name: postgresql
+        state: restarted

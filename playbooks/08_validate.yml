@@ -1,0 +1,64 @@
+---
+- name: "Phase 5 — Verify All Downstream Services and Interconnected Endpoints"
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Summary Banner
+      ansible.builtin.debug:
+        msg:
+          - "=========================================================="
+          - "  RED HAT MIDDLEWARE FLEET DEMO — HEALTH VALIDATION       "
+          - "=========================================================="
+
+    - name: Verify Red Hat Build of Keycloak (RHBK) OpenID Configuration
+      ansible.builtin.uri:
+        url: "http://{{ hostvars[groups['keycloak'][0]].ansible_host }}:8080/realms/{{ rhbk_realm_name }}/.well-known/openid-configuration"
+        method: GET
+        status_code: 200
+      register: rhbk_check
+      ignore_errors: true
+
+    - name: Report RHBK Status
+      ansible.builtin.debug:
+        msg: "Red Hat Build of Keycloak Realm '{{ rhbk_realm_name }}' is healthy: {{ rhbk_check.status == 200 }}"
+
+    - name: Verify Red Hat Data Grid REST endpoint
+      ansible.builtin.uri:
+        url: "http://{{ hostvars[groups['datagrid'][0]].ansible_host }}:11222/rest/v2/caches"
+        url_username: "{{ data_grid_user }}"
+        url_password: "{{ data_grid_pass }}"
+        method: GET
+        status_code: 200
+        force_basic_auth: true
+      register: datagrid_check
+      ignore_errors: true
+
+    - name: Report Data Grid Status
+      ansible.builtin.debug:
+        msg: "Red Hat Data Grid Cache Cluster is healthy: {{ datagrid_check.status == 200 }}"
+
+    - name: Verify Red Hat JBoss EAP HTTP applications
+      ansible.builtin.uri:
+        url: "http://{{ hostvars[item].ansible_host }}:8080/"
+        method: GET
+        status_code: [200, 302]
+      loop: "{{ groups['eap'] }}"
+      register: eap_checks
+      ignore_errors: true
+
+    - name: Report EAP Cluster Nodes Status
+      ansible.builtin.debug:
+        msg: "EAP Node {{ item.item }} responds with HTTP {{ item.status | default('Unreachable') }}"
+      loop: "{{ eap_checks.results }}"
+
+    - name: Verify Red Hat JBCS mod_cluster manager
+      ansible.builtin.uri:
+        url: "http://{{ hostvars[groups['loadbalancer'][0]].ansible_host }}:6666/mod_cluster_manager"
+        method: GET
+        status_code: 200
+      register: jbcs_check
+      ignore_errors: true
+
+    - name: Report JBCS Status
+      ansible.builtin.debug:
+        msg: "Red Hat JBCS mod_cluster Load Balancer is healthy: {{ jbcs_check.status == 200 }}"

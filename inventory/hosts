@@ -1,0 +1,65 @@
+# ==============================================================================
+# AMW Interconnected Fleet Demo — Inventory
+# ==============================================================================
+# In a real environment, replace with your actual FQDNs or IPs.
+# To scale EAP from 3 nodes to 50 nodes, simply edit the range: eap-[01:50].demo.local
+
+[all:vars]
+ansible_user=cloud-user
+ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+
+# --- Identity & Distributed Caching Layer ---
+[datagrid]
+datagrid-01.demo.local ansible_host=192.168.100.11
+datagrid-02.demo.local ansible_host=192.168.100.12
+
+[keycloak]
+keycloak-01.demo.local ansible_host=192.168.100.21
+keycloak-02.demo.local ansible_host=192.168.100.22
+
+# --- Messaging & Event Streaming Backbone ---
+[amq_broker_master]
+amq-01.demo.local ansible_host=192.168.100.31 broker_role=master
+
+[amq_broker_slave]
+amq-02.demo.local ansible_host=192.168.100.32 broker_role=slave
+
+[amq_broker:children]
+amq_broker_master
+amq_broker_slave
+
+[kafka]
+kafka-01.demo.local ansible_host=192.168.100.41 node_id=1
+kafka-02.demo.local ansible_host=192.168.100.42 node_id=2
+kafka-03.demo.local ansible_host=192.168.100.43 node_id=3
+
+# --- Application Services Tier ---
+[eap]
+eap-01.demo.local ansible_host=192.168.100.51 eap_instance_id=1
+eap-02.demo.local ansible_host=192.168.100.52 eap_instance_id=2
+eap-03.demo.local ansible_host=192.168.100.53 eap_instance_id=3
+
+[jws]
+jws-01.demo.local ansible_host=192.168.100.61
+
+# --- Frontend Load Balancing & Ingress ---
+[loadbalancer]
+jbcs-01.demo.local ansible_host=192.168.100.71
+jbcs-02.demo.local ansible_host=192.168.100.72
+
+# --- Relational Database (Backing Keycloak & EAP) ---
+[database]
+db-01.demo.local ansible_host=192.168.100.81
+
+# --- Logical Group Aggregations ---
+[middleware:children]
+datagrid
+keycloak
+amq_broker
+kafka
+eap
+jws
+loadbalancer
+
+[infrastructure:children]
+database
